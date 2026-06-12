@@ -1,0 +1,136 @@
+# ========================
+# Node.js / JavaScript
+# ========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ========================
+# Environment Variables
+# ========================
+.env
+.env.local
+.env.production
+.env.development
+
+# ========================
+# Database Files (WITH DATA - NEVER COMMIT)
+# ========================
+*.sql
+*.db
+*.sqlite
+*.sqlite3
+backup*.sql
+dump*.sql
+data.sql
+database.sql
+prod_data.sql
+test_data.sql
+*.db-journal
+
+# Database credentials
+.my.cnf
+.mysql_history
+
+# ========================
+# Build / Distribution
+# ========================
+build/
+dist/
+out/
+.next/
+*.log
+
+# ========================
+# Backend Specific
+# ========================
+backend/node_modules/
+backend/.env
+backend/dist/
+backend/*.log
+
+# ========================
+# Frontend Specific
+# ========================
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/.env.local
+frontend/coverage/
+
+# ========================
+# IDE / Editor Files
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ========================
+# OS Generated Files
+# ========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ========================
+# Secrets / Keys / Certificates
+# ========================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.secret
+
+# ========================
+# Logs
+# ========================
+logs/
+*.log
+npm-debug.log
+
+# ========================
+# Temporary Files
+# ========================
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ========================
+# Testing / Coverage
+# ========================
+coverage/
+.nyc_output/
+*.test.js
+*.spec.js
+
+# ========================
+# Backup Files
+# ========================
+*.bak
+*.backup
+*.old
+*.orig
+
+# ========================
+# Archive Files
+# ========================
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
