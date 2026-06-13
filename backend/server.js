@@ -6,11 +6,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// MySQL Connection
+// MySQL Connection with YOUR password
 const db = mysql.createConnection({
-    host: 'localhost',
+    host: '127.0.0.1',
     user: 'root',
-    password: 'root123',
+    password: 'AshwithaChandru*1',
     database: 'ramraj_complaint_db'
 });
 
@@ -26,7 +26,7 @@ db.connect((err) => {
 app.post('/api/login', (req, res) => {
     const { employee_code, password } = req.body;
     
-    const sql = 'SELECT * FROM users WHERE employee_code = ? AND password = ?';
+    const sql = 'SELECT id, employee_code, employee_name, role FROM users WHERE employee_code = ? AND password = ?';
     db.query(sql, [employee_code, password], (err, results) => {
         if (err) {
             return res.status(500).json({ message: 'Database error' });
@@ -47,7 +47,7 @@ app.post('/api/login', (req, res) => {
     });
 });
 
-// Get all customers (for dropdown)
+// Get customers
 app.get('/api/customers', (req, res) => {
     db.query('SELECT id, customer_code, customer_name FROM customers', (err, results) => {
         if (err) return res.status(500).json({ message: 'Database error' });
@@ -55,7 +55,7 @@ app.get('/api/customers', (req, res) => {
     });
 });
 
-// Get invoices by customer (last 30 days only)
+// Get invoices by customer (last 30 days)
 app.get('/api/invoices/:customerId', (req, res) => {
     const { customerId } = req.params;
     const sql = `SELECT id, invoice_number, invoice_date FROM invoices 
@@ -86,14 +86,13 @@ app.post('/api/complaints', (req, res) => {
     const status = 'Pending';
     const created_at = new Date();
     
-    // First get invoice number from invoice_id
     const getInvoiceSql = 'SELECT invoice_number FROM invoices WHERE id = ?';
     db.query(getInvoiceSql, [invoice_id], (err, invoiceResult) => {
         if (err) return res.status(500).json({ message: 'Database error' });
         
         const invoice_number = invoiceResult[0].invoice_number;
         
-        const sql = `INSERT INTO complaints (complaint_id, customer_id, invoice_number, complaint_type, complaint_subtype, description, status, created_at, escalation_level) 
+        const sql = `INSERT INTO complaints (complaint_id, customer_id, invoice_number, complaint_type, complaint_subtype, complaint_text, status, created_at, escalation_level) 
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`;
         
         db.query(sql, [complaint_id, customer_id, invoice_number, complaint_type, complaint_subtype, description, status, created_at], (err) => {
@@ -108,5 +107,5 @@ app.post('/api/complaints', (req, res) => {
 
 const PORT = 5000;
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:5000`);
+    console.log(`Server running on http://localhost:${PORT}`);
 });
