@@ -45,12 +45,11 @@ db.connect((err) => {
 });
 
 // ==================== AUTO ESCALATION FUNCTION (Runs every minute) ====================
-// Escalation stops at Level 2 (Unit Head) - No further escalation beyond that
 const checkAndEscalateComplaints = () => {
     const sql = `SELECT id, complaint_id, created_at, escalation_level FROM complaints 
                  WHERE status IN ('Pending', 'In Progress') 
                  AND created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-                 AND escalation_level < 2`;  // Stop at Level 2 (Unit Head)
+                 AND escalation_level < 2`;
     
     db.query(sql, (err, complaints) => {
         if (err) {
@@ -67,7 +66,6 @@ const checkAndEscalateComplaints = () => {
                 } else {
                     console.log(`Auto-escalated complaint ${complaint.complaint_id} to level ${newLevel}`);
                     
-                    // Insert escalation history
                     const historySql = `INSERT INTO escalation_history (complaint_id, escalated_from_level, escalated_to_level, reason) 
                                         VALUES (?, ?, ?, 'Auto-escalated: 24 hours exceeded')`;
                     db.query(historySql, [complaint.complaint_id, complaint.escalation_level, newLevel], (err) => {
@@ -79,7 +77,6 @@ const checkAndEscalateComplaints = () => {
     });
 };
 
-// Run auto escalation every minute
 setInterval(checkAndEscalateComplaints, 60000);
 
 // ==================== LOGIN API ====================
@@ -204,7 +201,6 @@ app.get('/api/complaints', (req, res) => {
         }
     } else if (role === 'warehouse_manager') {
         // Manager sees ALL complaints
-        console.log('Warehouse Manager - viewing all complaints');
     } else if (role === 'unit_head') {
         if (unit && unit !== 'null' && unit !== 'undefined') {
             sql += ` AND w.unit = '${unit}'`;
@@ -222,7 +218,7 @@ app.get('/api/complaints', (req, res) => {
     });
 });
 
-// ==================== GET ESCALATED COMPLAINTS (For Manager) ====================
+// ==================== GET ESCALATED COMPLAINTS ====================
 app.get('/api/complaints/escalated', (req, res) => {
     const sql = `SELECT c.*, cust.customer_name, u.employee_name as sales_exec_name,
                         w.warehouse_name, w.unit
@@ -239,12 +235,13 @@ app.get('/api/complaints/escalated', (req, res) => {
     });
 });
 
-// ==================== UPDATE COMPLAINT STATUS ====================
+// ==================== UPDATE COMPLAINT STATUS (With proper status flow) ====================
 app.put('/api/complaints/:id/status', (req, res) => {
     const { id } = req.params;
     const { status, resolved_by, resolution_notes } = req.body;
     const resolved_at = status === 'Resolved' ? new Date() : null;
     
+    // Validate status flow
     const sql = `UPDATE complaints SET status = ?, resolved_at = ?, resolved_by = ?, resolution_notes = ? WHERE id = ?`;
     db.query(sql, [status, resolved_at, resolved_by, resolution_notes, id], (err) => {
         if (err) return res.status(500).json({ message: 'Database error' });
@@ -252,7 +249,24 @@ app.put('/api/complaints/:id/status', (req, res) => {
     });
 });
 
-// ==================== ESCALATE COMPLAINT (Manual escalation with limit at Level 2) ====================
+// ==================== MARK AS IN PROGRESS ====================
+app.put('/api/complaints/:id/in-progress', (req, res) => {
+    const { id } = req.params;
+    const { started_by } = req.body;
+    
+    const sql = `UPDATE complaints SET status = 'In Progress', started_at = NOW(), started_by = ? WHERE id = ? AND status = 'Pending'`;
+    db.query(sql, [started_by, id], (err, result) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ success: false, message: 'Complaint is not in Pending status' });
+        }
+        
+        res.json({ success: true, message: 'Complaint marked as In Progress' });
+    });
+});
+
+// ==================== ESCALATE COMPLAINT ====================
 app.put('/api/complaints/:id/escalate', (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
@@ -262,7 +276,6 @@ app.put('/api/complaints/:id/escalate', (req, res) => {
         
         const current_level = result[0].escalation_level;
         
-        // Stop escalating if already at level 2 (Unit Head)
         if (current_level >= 2) {
             return res.json({ success: false, message: 'Already at highest escalation level (Unit Head)' });
         }
@@ -284,7 +297,7 @@ app.put('/api/complaints/:id/escalate', (req, res) => {
     });
 });
 
-// ==================== SEND MESSAGE TO SALES EXECUTIVE ====================
+// ==================== SEND MESSAGE ====================
 app.post('/api/send-message', (req, res) => {
     const { complaint_id, from_user_id, to_user_id, message } = req.body;
     
@@ -296,7 +309,7 @@ app.post('/api/send-message', (req, res) => {
     });
 });
 
-// ==================== GET NOTIFICATIONS FOR USER ====================
+// ==================== GET NOTIFICATIONS ====================
 app.get('/api/notifications/:userId', (req, res) => {
     const { userId } = req.params;
     const sql = `SELECT n.*, c.complaint_id as complaint_code 
