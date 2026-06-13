@@ -1,5 +1,3 @@
-//Login.js
-
 import React, { useState } from 'react';
 import axios from 'axios';
 
@@ -41,7 +39,6 @@ function Login({ onLogin }) {
             position: 'relative',
             overflow: 'hidden'
         }}>
-            {/* Background decorative circles */}
             <div style={{
                 position: 'absolute',
                 top: '10%',

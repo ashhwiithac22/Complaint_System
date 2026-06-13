@@ -1,9 +1,7 @@
-//RaiseComplaint.js
-
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-function RaiseComplaint({ user, onLogout }) {
+function RaiseComplaint({ user, onLogout, onNavigate }) {
     const [customerId, setCustomerId] = useState('');
     const [invoiceId, setInvoiceId] = useState('');
     const [complaintType, setComplaintType] = useState('');
@@ -92,6 +90,9 @@ function RaiseComplaint({ user, onLogout }) {
 
             if (response.data.success) {
                 setMessage('✓ Complaint raised successfully! ID: ' + response.data.complaint_id);
+                setTimeout(() => {
+                    onNavigate('dashboard');
+                }, 2000);
                 setCustomerId('');
                 setInvoiceId('');
                 setComplaintType('');
@@ -117,6 +118,25 @@ function RaiseComplaint({ user, onLogout }) {
             position: 'relative',
             overflow: 'auto'
         }}>
+            {/* Back to Dashboard button */}
+            <div style={{ maxWidth: '1000px', margin: '0 auto', marginBottom: '16px' }}>
+                <button 
+                    onClick={() => onNavigate('dashboard')}
+                    style={{
+                        background: 'rgba(255,255,255,0.2)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '12px',
+                        padding: '8px 20px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '500'
+                    }}
+                >
+                    ← Back to Dashboard
+                </button>
+            </div>
+            
             <div style={{
                 maxWidth: '1000px',
                 margin: '0 auto',
