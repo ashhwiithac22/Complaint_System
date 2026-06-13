@@ -1,10 +1,32 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Create uploads folder if not exists
+const uploadDir = './uploads';
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
+}
+
+// Configure multer for file upload
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage: storage, limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB limit
 
 // MySQL Connection
 const db = mysql.createConnection({
@@ -21,6 +43,44 @@ db.connect((err) => {
         console.log('MySQL Connected');
     }
 });
+
+// ==================== AUTO ESCALATION FUNCTION (Runs every minute) ====================
+// Escalation stops at Level 2 (Unit Head) - No further escalation beyond that
+const checkAndEscalateComplaints = () => {
+    const sql = `SELECT id, complaint_id, created_at, escalation_level FROM complaints 
+                 WHERE status IN ('Pending', 'In Progress') 
+                 AND created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                 AND escalation_level < 2`;  // Stop at Level 2 (Unit Head)
+    
+    db.query(sql, (err, complaints) => {
+        if (err) {
+            console.error('Auto escalation error:', err);
+            return;
+        }
+        
+        complaints.forEach(complaint => {
+            const newLevel = complaint.escalation_level + 1;
+            const updateSql = `UPDATE complaints SET status = 'Escalated', escalation_level = ? WHERE id = ?`;
+            db.query(updateSql, [newLevel, complaint.id], (err) => {
+                if (err) {
+                    console.error('Error escalating complaint:', err);
+                } else {
+                    console.log(`Auto-escalated complaint ${complaint.complaint_id} to level ${newLevel}`);
+                    
+                    // Insert escalation history
+                    const historySql = `INSERT INTO escalation_history (complaint_id, escalated_from_level, escalated_to_level, reason) 
+                                        VALUES (?, ?, ?, 'Auto-escalated: 24 hours exceeded')`;
+                    db.query(historySql, [complaint.complaint_id, complaint.escalation_level, newLevel], (err) => {
+                        if (err) console.error('History insert error:', err);
+                    });
+                }
+            });
+        });
+    });
+};
+
+// Run auto escalation every minute
+setInterval(checkAndEscalateComplaints, 60000);
 
 // ==================== LOGIN API ====================
 app.post('/api/login', (req, res) => {
@@ -80,12 +140,13 @@ app.get('/api/warehouse/:customerId', (req, res) => {
     });
 });
 
-// ==================== RAISE COMPLAINT ====================
-app.post('/api/complaints', (req, res) => {
+// ==================== RAISE COMPLAINT (WITH IMAGE UPLOAD) ====================
+app.post('/api/complaints', upload.single('image'), (req, res) => {
     const { customer_id, invoice_id, complaint_type, complaint_subtype, description, employee_code } = req.body;
     const complaint_id = `C${Date.now()}`;
     const status = 'Pending';
     const created_at = new Date();
+    const image_path = req.file ? `/uploads/${req.file.filename}` : null;
     
     const getInvoiceSql = `SELECT i.invoice_number, i.warehouse_id, c.sales_exec_id 
                            FROM invoices i 
@@ -103,13 +164,13 @@ app.post('/api/complaints', (req, res) => {
         
         const sql = `INSERT INTO complaints (
             complaint_id, customer_id, invoice_id, invoice_number, warehouse_id, 
-            sales_exec_id, complaint_type, complaint_subtype, complaint_text, 
+            sales_exec_id, complaint_type, complaint_subtype, complaint_text, image_path,
             status, created_at, escalation_level
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`;
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`;
         
         db.query(sql, [
             complaint_id, customer_id, invoice_id, invoice_number, warehouse_id, 
-            sales_exec_id, complaint_type, complaint_subtype, description, 
+            sales_exec_id, complaint_type, complaint_subtype, description, image_path,
             status, created_at
         ], (err) => {
             if (err) {
@@ -125,8 +186,6 @@ app.post('/api/complaints', (req, res) => {
 app.get('/api/complaints', (req, res) => {
     const { user_id, role, warehouse_id, unit } = req.query;
     
-    console.log('Request params:', { user_id, role, warehouse_id, unit });
-    
     let sql = `
         SELECT c.*, cust.customer_name, u.employee_name as sales_exec_name,
                w.warehouse_name, w.unit
@@ -137,17 +196,14 @@ app.get('/api/complaints', (req, res) => {
         WHERE 1=1
     `;
     
-    // Role-based filtering
     if (role === 'sales') {
         sql += ` AND c.sales_exec_id = ${user_id}`;
     } else if (role === 'warehouse_team') {
-        // Team members only see their assigned warehouse
         if (warehouse_id && warehouse_id !== 'null' && warehouse_id !== 'undefined') {
             sql += ` AND c.warehouse_id = ${warehouse_id}`;
         }
     } else if (role === 'warehouse_manager') {
-        // Managers see ALL complaints from ALL warehouses
-        // No warehouse filter - they can see everything
+        // Manager sees ALL complaints
         console.log('Warehouse Manager - viewing all complaints');
     } else if (role === 'unit_head') {
         if (unit && unit !== 'null' && unit !== 'undefined') {
@@ -157,14 +213,28 @@ app.get('/api/complaints', (req, res) => {
     
     sql += ` ORDER BY c.created_at DESC`;
     
-    console.log('SQL Query:', sql);
-    
     db.query(sql, (err, results) => {
         if (err) {
             console.error('Query error:', err);
             return res.status(500).json({ message: 'Database error' });
         }
-        console.log('Results count:', results.length);
+        res.json(results);
+    });
+});
+
+// ==================== GET ESCALATED COMPLAINTS (For Manager) ====================
+app.get('/api/complaints/escalated', (req, res) => {
+    const sql = `SELECT c.*, cust.customer_name, u.employee_name as sales_exec_name,
+                        w.warehouse_name, w.unit
+                 FROM complaints c 
+                 JOIN customers cust ON cust.id = c.customer_id 
+                 LEFT JOIN users u ON u.id = c.sales_exec_id
+                 LEFT JOIN warehouses w ON w.id = c.warehouse_id
+                 WHERE c.status = 'Escalated'
+                 ORDER BY c.created_at DESC`;
+    
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
         res.json(results);
     });
 });
@@ -182,12 +252,35 @@ app.put('/api/complaints/:id/status', (req, res) => {
     });
 });
 
-// ==================== ESCALATE COMPLAINT ====================
+// ==================== ESCALATE COMPLAINT (Manual escalation with limit at Level 2) ====================
 app.put('/api/complaints/:id/escalate', (req, res) => {
     const { id } = req.params;
-    db.query('UPDATE complaints SET status = "Escalated", escalation_level = escalation_level + 1 WHERE id = ?', [id], (err) => {
+    const { reason } = req.body;
+    
+    db.query('SELECT escalation_level, complaint_id FROM complaints WHERE id = ?', [id], (err, result) => {
         if (err) return res.status(500).json({ message: 'Database error' });
-        res.json({ success: true });
+        
+        const current_level = result[0].escalation_level;
+        
+        // Stop escalating if already at level 2 (Unit Head)
+        if (current_level >= 2) {
+            return res.json({ success: false, message: 'Already at highest escalation level (Unit Head)' });
+        }
+        
+        const new_level = current_level + 1;
+        
+        const updateSql = `UPDATE complaints SET status = 'Escalated', escalation_level = ? WHERE id = ?`;
+        db.query(updateSql, [new_level, id], (err) => {
+            if (err) return res.status(500).json({ message: 'Database error' });
+            
+            const historySql = `INSERT INTO escalation_history (complaint_id, escalated_from_level, escalated_to_level, reason) 
+                                VALUES (?, ?, ?, ?)`;
+            db.query(historySql, [result[0].complaint_id, current_level, new_level, reason || 'Manually escalated'], (err) => {
+                if (err) console.error('History error:', err);
+            });
+            
+            res.json({ success: true, escalation_level: new_level });
+        });
     });
 });
 
@@ -249,7 +342,6 @@ app.get('/api/dashboard/stats', (req, res) => {
         }
     } else if (role === 'warehouse_manager') {
         // Manager sees ALL complaints
-        console.log('Manager stats - showing all complaints');
     } else if (role === 'unit_head') {
         if (unit && unit !== 'null' && unit !== 'undefined') {
             sql += ` AND w.unit = '${unit}'`;

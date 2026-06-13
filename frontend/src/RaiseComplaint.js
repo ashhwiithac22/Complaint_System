@@ -1,3 +1,4 @@
+//RaiseComplaint.js
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
@@ -13,6 +14,8 @@ function RaiseComplaint({ user, onLogout, onNavigate }) {
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showSubtype, setShowSubtype] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
 
     const subtypeOptions = {
         'Mismatch': ['Wrong Product', 'Wrong Size'],
@@ -67,6 +70,18 @@ function RaiseComplaint({ user, onLogout, onNavigate }) {
         setShowSubtype(!!subtypeOptions[type]);
     };
 
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setSelectedImage(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -79,13 +94,19 @@ function RaiseComplaint({ user, onLogout, onNavigate }) {
         }
 
         try {
-            const response = await axios.post('http://localhost:5000/api/complaints', {
-                customer_id: customerId,
-                invoice_id: invoiceId,
-                complaint_type: complaintType,
-                complaint_subtype: complaintSubtype,
-                description,
-                employee_code: user?.employee_code
+            const formData = new FormData();
+            formData.append('customer_id', customerId);
+            formData.append('invoice_id', invoiceId);
+            formData.append('complaint_type', complaintType);
+            formData.append('complaint_subtype', complaintSubtype || '');
+            formData.append('description', description);
+            formData.append('employee_code', user?.employee_code);
+            if (selectedImage) {
+                formData.append('image', selectedImage);
+            }
+
+            const response = await axios.post('http://localhost:5000/api/complaints', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
 
             if (response.data.success) {
@@ -101,6 +122,8 @@ function RaiseComplaint({ user, onLogout, onNavigate }) {
                 setWarehouse('');
                 setInvoices([]);
                 setShowSubtype(false);
+                setSelectedImage(null);
+                setImagePreview(null);
             }
         } catch (error) {
             setMessage('✗ Error raising complaint');
@@ -118,7 +141,6 @@ function RaiseComplaint({ user, onLogout, onNavigate }) {
             position: 'relative',
             overflow: 'auto'
         }}>
-            {/* Back to Dashboard button */}
             <div style={{ maxWidth: '1000px', margin: '0 auto', marginBottom: '16px' }}>
                 <button 
                     onClick={() => onNavigate('dashboard')}
@@ -312,7 +334,7 @@ function RaiseComplaint({ user, onLogout, onNavigate }) {
                         )}
                     </div>
 
-                    <div style={{ marginBottom: '32px' }}>
+                    <div style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</label>
                         <textarea
                             value={description}
@@ -335,6 +357,29 @@ function RaiseComplaint({ user, onLogout, onNavigate }) {
                             onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                             required
                         />
+                    </div>
+
+                    {/* Image Upload Section */}
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{ display: 'block', marginBottom: '8px', color: '#374151', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Attach Image (Optional)</label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '2px solid #e5e7eb',
+                                borderRadius: '16px',
+                                background: '#ffffff',
+                                fontSize: '14px'
+                            }}
+                        />
+                        {imagePreview && (
+                            <div style={{ marginTop: '10px' }}>
+                                <img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '8px' }} />
+                            </div>
+                        )}
                     </div>
 
                     <button

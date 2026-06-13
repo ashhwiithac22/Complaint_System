@@ -3,6 +3,7 @@ import axios from 'axios';
 
 function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
     const [complaints, setComplaints] = useState([]);
+    const [escalatedComplaints, setEscalatedComplaints] = useState([]);
     const [notifications, setNotifications] = useState([]);
     const [stats, setStats] = useState({ pending: 0, in_progress: 0, resolved: 0, escalated: 0, total: 0 });
     const [loading, setLoading] = useState(true);
@@ -12,13 +13,16 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
     const [showReplyModal, setShowReplyModal] = useState(false);
     const [replyToUser, setReplyToUser] = useState(null);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [activeTab, setActiveTab] = useState('all'); // 'all' or 'escalated'
 
     useEffect(() => {
         fetchComplaints();
+        fetchEscalatedComplaints();
         fetchStats();
         fetchNotifications();
         const interval = setInterval(() => {
             fetchComplaints();
+            fetchEscalatedComplaints();
             fetchStats();
             fetchNotifications();
         }, 30000);
@@ -40,6 +44,15 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
         } catch (error) {
             console.error('Error fetching complaints:', error);
             setLoading(false);
+        }
+    };
+
+    const fetchEscalatedComplaints = async () => {
+        try {
+            const response = await axios.get('http://localhost:5000/api/complaints/escalated');
+            setEscalatedComplaints(response.data);
+        } catch (error) {
+            console.error('Error fetching escalated complaints:', error);
         }
     };
 
@@ -85,6 +98,7 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
                 resolution_notes: resolutionNotes
             });
             fetchComplaints();
+            fetchEscalatedComplaints();
             fetchStats();
             setShowModal(false);
         } catch (error) {
@@ -92,10 +106,11 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
         }
     };
 
-    const escalateComplaint = async (complaintId) => {
+    const escalateComplaint = async (complaintId, reason = 'Manually escalated') => {
         try {
-            await axios.put(`http://localhost:5000/api/complaints/${complaintId}/escalate`, {});
+            await axios.put(`http://localhost:5000/api/complaints/${complaintId}/escalate`, { reason });
             fetchComplaints();
+            fetchEscalatedComplaints();
             fetchStats();
             setShowModal(false);
         } catch (error) {
@@ -161,7 +176,7 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
                         <button onClick={() => updateStatus(complaint.id, 'Resolved', 'Issue resolved')} style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px' }}>Resolve</button>
                     )}
                     {complaint.status !== 'Escalated' && complaint.status !== 'Resolved' && (
-                        <button onClick={() => escalateComplaint(complaint.id)} style={{ background: '#f59e0b', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px' }}>Escalate</button>
+                        <button onClick={() => escalateComplaint(complaint.id, 'Manually escalated by manager')} style={{ background: '#f59e0b', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px' }}>Escalate</button>
                     )}
                 </div>
             );
@@ -170,6 +185,8 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
             <button onClick={() => { setSelectedComplaint(complaint); setShowModal(true); }} style={{ background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', padding: '6px 16px', cursor: 'pointer', fontSize: '12px' }}>View</button>
         );
     };
+
+    const displayComplaints = activeTab === 'all' ? complaints : escalatedComplaints;
 
     return (
         <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '40px 24px', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
@@ -215,10 +232,50 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
                     <div style={{ background: 'white', borderRadius: '16px', padding: '20px', textAlign: 'center' }}><p style={{ color: '#1e293b', fontSize: '28px', fontWeight: '700', margin: '0' }}>{stats.total}</p><p style={{ color: '#6b7280', margin: '8px 0 0 0' }}>Total</p></div>
                 </div>
 
+                {/* Tab Navigation for Manager */}
+                {(user.role === 'warehouse_manager' || user.role === 'warehouse_team') && (
+                    <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
+                        <button
+                            onClick={() => setActiveTab('all')}
+                            style={{
+                                padding: '10px 24px',
+                                background: activeTab === 'all' ? 'white' : 'rgba(255,255,255,0.2)',
+                                color: activeTab === 'all' ? '#667eea' : 'white',
+                                border: 'none',
+                                borderRadius: '12px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '600'
+                            }}
+                        >
+                            All Complaints
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('escalated')}
+                            style={{
+                                padding: '10px 24px',
+                                background: activeTab === 'escalated' ? 'white' : 'rgba(255,255,255,0.2)',
+                                color: activeTab === 'escalated' ? '#f59e0b' : 'white',
+                                border: 'none',
+                                borderRadius: '12px',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                fontWeight: '600'
+                            }}
+                        >
+                            ⚠️ Escalated Complaints ({escalatedComplaints.length})
+                        </button>
+                    </div>
+                )}
+
                 {/* Complaints Table */}
                 <div style={{ background: 'white', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-                    <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}><h3 style={{ margin: 0, color: '#1e293b' }}>{getRoleTitle()}</h3></div>
-                    {loading ? <div style={{ padding: '40px', textAlign: 'center' }}>Loading...</div> : complaints.length === 0 ? <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No complaints found</div> : (
+                    <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
+                        <h3 style={{ margin: 0, color: '#1e293b' }}>
+                            {activeTab === 'all' ? getRoleTitle() : '⚠️ Escalated Complaints (Pending > 24 hours)'}
+                        </h3>
+                    </div>
+                    {loading ? <div style={{ padding: '40px', textAlign: 'center' }}>Loading...</div> : displayComplaints.length === 0 ? <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No complaints found</div> : (
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead style={{ background: '#f8fafc' }}>
@@ -233,7 +290,7 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {complaints.map((complaint) => (
+                                    {displayComplaints.map((complaint) => (
                                         <tr key={complaint.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                             <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '500', color: '#1e293b' }}>{complaint.complaint_id}</td>
                                             <td style={{ padding: '12px 16px', fontSize: '14px', color: '#475569' }}>{complaint.customer_name}</td>
@@ -251,7 +308,7 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
                 </div>
             </div>
 
-            {/* Complaint Details Modal */}
+            {/* Complaint Details Modal with Image */}
             {showModal && selectedComplaint && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
                     <div style={{ background: 'white', borderRadius: '24px', width: '500px', maxWidth: '90%', padding: '24px', maxHeight: '80vh', overflow: 'auto' }}>
@@ -261,12 +318,20 @@ function ComplaintDashboard({ user, onLogout, onNavigate, canRaise }) {
                         <div style={{ marginBottom: '16px' }}><label style={{ fontWeight: '600', color: '#475569' }}>Type:</label><p>{selectedComplaint.complaint_type}</p></div>
                         {selectedComplaint.complaint_subtype && <div style={{ marginBottom: '16px' }}><label style={{ fontWeight: '600', color: '#475569' }}>Subtype:</label><p>{selectedComplaint.complaint_subtype}</p></div>}
                         <div style={{ marginBottom: '16px' }}><label style={{ fontWeight: '600', color: '#475569' }}>Description:</label><p>{selectedComplaint.complaint_text}</p></div>
+                        {selectedComplaint.image_path && (
+                            <div style={{ marginBottom: '16px' }}>
+                                <label style={{ fontWeight: '600', color: '#475569' }}>Attached Image:</label>
+                                <div style={{ marginTop: '8px' }}>
+                                    <img src={`http://localhost:5000${selectedComplaint.image_path}`} alt="Complaint" style={{ maxWidth: '100%', borderRadius: '8px' }} />
+                                </div>
+                            </div>
+                        )}
                         <div style={{ marginBottom: '16px' }}><label style={{ fontWeight: '600', color: '#475569' }}>Status:</label><span style={{ background: getStatusBgColor(selectedComplaint.status), color: getStatusColor(selectedComplaint.status), padding: '4px 12px', borderRadius: '20px', fontSize: '12px', display: 'inline-block' }}>{selectedComplaint.status}</span></div>
                         <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
                             {user.role !== 'sales' && selectedComplaint.status !== 'Resolved' && (
                                 <>
                                     <button onClick={() => updateStatus(selectedComplaint.id, 'Resolved', 'Issue resolved by team')} style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: '10px', padding: '10px 20px', cursor: 'pointer', flex: 1 }}>Mark Resolved</button>
-                                    <button onClick={() => escalateComplaint(selectedComplaint.id)} style={{ background: '#f59e0b', color: 'white', border: 'none', borderRadius: '10px', padding: '10px 20px', cursor: 'pointer', flex: 1 }}>Escalate</button>
+                                    <button onClick={() => escalateComplaint(selectedComplaint.id, 'Manually escalated by manager')} style={{ background: '#f59e0b', color: 'white', border: 'none', borderRadius: '10px', padding: '10px 20px', cursor: 'pointer', flex: 1 }}>Escalate</button>
                                 </>
                             )}
                             <button onClick={() => setShowModal(false)} style={{ background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '10px', padding: '10px 20px', cursor: 'pointer', flex: 1 }}>Close</button>
